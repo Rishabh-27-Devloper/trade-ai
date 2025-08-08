@@ -9,7 +9,7 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_socketio import SocketIO, emit
 import threading
-import time
+import time, os
 
 from app.config import Config
 from app.db import get_db_session, SystemLog, MarketData, Features, ModelCheckpoint, SimulatedTrade
@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 def create_app(config):
     """Create and configure Flask application"""
-    app = Flask(__name__)
+    template_dir = os.path.join(os.path.dirname(__file__), 'ui', 'templates')
+    static_dir = os.path.join(os.path.dirname(__file__), 'ui', 'static')
+    app = Flask(__name__,template_folder=template_dir)
     app.config['SECRET_KEY'] = config.SECRET_KEY
     app.config['DEBUG'] = config.DEBUG
 
@@ -99,6 +101,26 @@ def create_app(config):
         except Exception as e:
             logger.error(f"❌ Error getting trades: {e}")
             return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/open-trades', methods=['GET'])
+    def get_open_trades():
+        sim = app.config['simulator']
+        trades = sim.open_positions        
+        return jsonify(trades)
+
+    @app.route('/api/close-trade/<int:trade_id>', methods=['GET','POST'])
+    def close_trade_api(trade_id):
+        sim = app.config['simulator']
+
+        # Find position in open_positions
+        position = next((p for p in sim.open_positions if p['id'] == trade_id), None)
+        if not position:
+            return jsonify({"error": "Trade not found or already closed"}), 404
+
+        current_price = _get_latest_price()
+        sim._close_position(position, reason="Manual Close", exit_price=current_price)
+
+        return jsonify({"success": True, "trade_id": trade_id})
 
     @app.route('/api/market-data')
     def api_market_data():

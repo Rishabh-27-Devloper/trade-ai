@@ -26,7 +26,7 @@ class TradingSimulator:
         self.trainer = None  # Will be set by main app
 
         # Portfolio state
-        self.initial_balance = 10000.0  # Starting with $10k
+        self.initial_balance = 1000.0  # Starting with $10k
         self.current_balance = self.initial_balance
         self.open_positions = []
         self.last_trade_time = 0
@@ -37,9 +37,9 @@ class TradingSimulator:
         self.cooldown_seconds = config.COOLDOWN_SECONDS
 
         # Risk management
-        self.stop_loss_percent = 0.02  # 2% stop loss
-        self.take_profit_percent = 0.04  # 4% take profit (2:1 R:R)
-        self.max_holding_hours = 24  # Max holding period
+        self.stop_loss_percent = 0.005  # 0.5% stop loss
+        self.take_profit_percent = 0.01  # 1% take profit (2:1 R:R)
+        self.max_holding_hours = 3  # Max holding period
 
         # Fees and slippage (in basis points)
         self.slippage_bps = config.SLIPPAGE_BPS

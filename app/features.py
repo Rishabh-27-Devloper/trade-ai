@@ -119,7 +119,7 @@ class FeatureGenerator:
             df['atr_14'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'], window=14)
 
             # Volume indicators
-            df['volume_sma_20'] = ta.volume.VolumeSMAIndicator(df['close'], df['volume'], window=20).volume_sma()
+            df['volume_sma_20'] = df['volume'].rolling(window=20).mean()
             df['obv'] = ta.volume.on_balance_volume(df['close'], df['volume'])
 
             # Volatility
@@ -148,9 +148,9 @@ class FeatureGenerator:
         """Calculate future returns as labels"""
         try:
             # Calculate future returns
-            df['return_1h'] = df['close'].shift(-60).pct_change(60)  # 1 hour return (60 minutes)
-            df['return_4h'] = df['close'].shift(-240).pct_change(240)  # 4 hour return
-            df['return_24h'] = df['close'].shift(-1440).pct_change(1440)  # 24 hour return
+            df['return_1h'] = df['close'].shift(-60).pct_change(60, fill_method=None)  # 1 hour return (60 minutes)
+            df['return_4h'] = df['close'].shift(-240).pct_change(240, fill_method=None)  # 4 hour return
+            df['return_24h'] = df['close'].shift(-1440).pct_change(1440, fill_method=None)  # 24 hour return
 
             # Binary direction labels
             df['direction_1h'] = (df['return_1h'] > 0).astype(int)

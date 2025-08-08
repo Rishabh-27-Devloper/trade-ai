@@ -60,6 +60,10 @@ class Config:
         self.SLIPPAGE_BPS = 5  # 0.05% slippage
         self.MAKER_FEE_BPS = 10  # 0.10% maker fee
         self.TAKER_FEE_BPS = 10  # 0.10% taker fee
+        self.STOP_LOSS_PCT = float(os.getenv('STOP_LOSS_PCT', '0.001'))      # 0.1% stop loss
+        self.TAKE_PROFIT_PCT = float(os.getenv('TAKE_PROFIT_PCT', '0.0015')) # 0.15% take profit
+        self.MAX_TRADE_DURATION = int(os.getenv('MAX_TRADE_DURATION', '300'))  # 5 minutes
+        self.ENABLE_OPPOSITE_SIGNAL_EXIT = os.getenv('ENABLE_OPPOSITE_SIGNAL_EXIT', 'True').lower() == 'true'
 
     def to_dict(self):
         """Convert configuration to dictionary (excluding sensitive data)"""

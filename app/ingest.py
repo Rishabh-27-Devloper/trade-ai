@@ -25,6 +25,7 @@ class BinanceDataIngester:
         self.running = False
         self.reconnect_attempts = 0
         self.last_ping = time.time()
+        self.ws_connected = False  # Track connection state explicitly
 
         # Binance endpoints
         self.rest_base_url = 'https://api.binance.com/api/v3'
@@ -37,7 +38,7 @@ class BinanceDataIngester:
 
     def start(self):
         """Start data ingestion"""
-        logger.info(f"🔌 Starting data ingestion for {self.config.TRADING_PAIR}")
+        logger.info(f"Starting data ingestion for {self.config.TRADING_PAIR}")
         self.running = True
 
         # Fetch historical data first
@@ -48,8 +49,9 @@ class BinanceDataIngester:
 
     def stop(self):
         """Stop data ingestion"""
-        logger.info("🛑 Stopping data ingestion...")
+        logger.info("Stopping data ingestion...")
         self.running = False
+        self.ws_connected = False
 
         if self.ws:
             self.ws.close()
@@ -62,7 +64,7 @@ class BinanceDataIngester:
     def _fetch_historical_data(self, limit=1000):
         """Fetch historical kline data from REST API"""
         try:
-            logger.info(f"📊 Fetching historical data for {self.config.TRADING_PAIR}...")
+            logger.info(f"Fetching historical data for {self.config.TRADING_PAIR}...")
 
             url = f"{self.rest_base_url}/klines"
             params = {
@@ -75,7 +77,7 @@ class BinanceDataIngester:
             response.raise_for_status()
 
             klines = response.json()
-            logger.info(f"📈 Received {len(klines)} historical candles")
+            logger.info(f"Received {len(klines)} historical candles")
 
             # Process and store historical data
             session = get_db_session()
@@ -90,17 +92,17 @@ class BinanceDataIngester:
             session.commit()
             session.close()
 
-            logger.info(f"✅ Stored {stored_count} new historical data points")
+            logger.info(f"Stored {stored_count} new historical data points")
             log_system_event('INFO', 'ingester', f'Historical data loaded: {stored_count} points')
 
         except Exception as e:
-            logger.error(f"❌ Failed to fetch historical data: {e}")
+            logger.error(f"Failed to fetch historical data: {e}")
             log_system_event('ERROR', 'ingester', f'Historical data fetch failed: {e}')
 
     def _connect_websocket(self):
         """Connect to Binance WebSocket"""
         try:
-            logger.info(f"🔗 Connecting to WebSocket: {self.ws_url}")
+            logger.info(f"Connecting to WebSocket: {self.ws_url}")
 
             self.ws = WebSocketApp(
                 self.ws_url,
@@ -117,12 +119,13 @@ class BinanceDataIngester:
             ws_thread.start()
 
         except Exception as e:
-            logger.error(f"❌ WebSocket connection failed: {e}")
+            logger.error(f"WebSocket connection failed: {e}")
             self._schedule_reconnect()
 
     def _on_open(self, ws):
         """WebSocket connection opened"""
-        logger.info("✅ WebSocket connected")
+        logger.info("WebSocket connected")
+        self.ws_connected = True
         self.reconnect_attempts = 0
         log_system_event('INFO', 'ingester', 'WebSocket connected')
 
@@ -144,17 +147,19 @@ class BinanceDataIngester:
             self.last_ping = time.time()
 
         except Exception as e:
-            logger.error(f"❌ Error processing WebSocket message: {e}")
+            logger.error(f"Error processing WebSocket message: {e}")
 
     def _on_error(self, ws, error):
         """Handle WebSocket errors"""
-        logger.error(f"❌ WebSocket error: {error}")
+        logger.error(f"WebSocket error: {error}")
+        self.ws_connected = False
         log_system_event('ERROR', 'ingester', f'WebSocket error: {error}')
         self._schedule_reconnect()
 
     def _on_close(self, ws, close_status_code, close_msg):
         """Handle WebSocket close"""
-        logger.warning(f"🔌 WebSocket closed: {close_status_code} - {close_msg}")
+        logger.warning(f"WebSocket closed: {close_status_code} - {close_msg}")
+        self.ws_connected = False
         log_system_event('WARNING', 'ingester', f'WebSocket closed: {close_status_code}')
 
         if self.running:
@@ -174,14 +179,14 @@ class BinanceDataIngester:
             return
 
         if self.reconnect_attempts >= self.config.RECONNECTION_ATTEMPTS:
-            logger.error("❌ Max reconnection attempts reached")
+            logger.error("Max reconnection attempts reached")
             log_system_event('ERROR', 'ingester', 'Max WebSocket reconnection attempts reached')
             return
 
         self.reconnect_attempts += 1
         delay = min(self.config.RECONNECTION_DELAY * self.reconnect_attempts, 300)  # Max 5 min
 
-        logger.info(f"⏳ Scheduling reconnection attempt {self.reconnect_attempts} in {delay}s")
+        logger.info(f"Scheduling reconnection attempt {self.reconnect_attempts} in {delay}s")
 
         def delayed_reconnect():
             time.sleep(delay)
@@ -204,7 +209,7 @@ class BinanceDataIngester:
                 trades_count=int(kline[8])
             )
         except Exception as e:
-            logger.error(f"❌ Error parsing kline: {e}")
+            logger.error(f"Error parsing kline: {e}")
             return None
 
     def _parse_kline_ws(self, kline_data):
@@ -221,7 +226,7 @@ class BinanceDataIngester:
                 trades_count=int(kline_data['n'])
             )
         except Exception as e:
-            logger.error(f"❌ Error parsing WebSocket kline: {e}")
+            logger.error(f"Error parsing WebSocket kline: {e}")
             return None
 
     def _buffer_data(self, market_data):
@@ -248,11 +253,11 @@ class BinanceDataIngester:
             session.commit()
             session.close()
 
-            logger.debug(f"💾 Flushed {len(self.data_buffer)} data points to database")
+            logger.debug(f"Flushed {len(self.data_buffer)} data points to database")
             self.data_buffer.clear()
 
         except Exception as e:
-            logger.error(f"❌ Error flushing data buffer: {e}")
+            logger.error(f"Error flushing data buffer: {e}")
 
     def _data_exists(self, session, timestamp, symbol):
         """Check if data point already exists"""
@@ -275,7 +280,7 @@ class BinanceDataIngester:
 
             return float(response.json()['price'])
         except Exception as e:
-            logger.error(f"❌ Error fetching latest price: {e}")
+            logger.error(f"Error fetching latest price: {e}")
             return None
 
     def health_check(self):
@@ -283,9 +288,12 @@ class BinanceDataIngester:
         now = time.time()
         time_since_ping = now - self.last_ping
 
+        # Check if WebSocket is connected using our explicit flag
+        websocket_connected = self.ws_connected and self.ws is not None
+
         return {
             'running': self.running,
-            'websocket_connected': self.ws is not None and not self.ws.sock.closed if self.ws and hasattr(self.ws, 'sock') else False,
+            'websocket_connected': websocket_connected,
             'time_since_last_ping': time_since_ping,
             'reconnect_attempts': self.reconnect_attempts,
             'buffer_size': len(self.data_buffer)
@@ -306,7 +314,7 @@ class DataIngester:
 
     def run_continuously(self):
         """Run data ingestion continuously"""
-        logger.info("🚀 Starting continuous data ingestion...")
+        logger.info("Starting continuous data ingestion...")
         self.running = True
 
         # Start Binance ingester
@@ -329,19 +337,19 @@ class DataIngester:
                 if current_time - last_health_check >= self.health_check_interval:
                     health = self.binance_ingester.health_check()
                     if not health['websocket_connected'] and self.running:
-                        logger.warning("⚠️ WebSocket disconnected, attempting reconnection...")
+                        logger.warning("WebSocket disconnected, attempting reconnection...")
                         self.binance_ingester._connect_websocket()
                     last_health_check = current_time
 
                 time.sleep(1)  # Check every second
 
             except Exception as e:
-                logger.error(f"❌ Error in data ingestion loop: {e}")
+                logger.error(f"Error in data ingestion loop: {e}")
                 time.sleep(5)
 
     def stop(self):
         """Stop data ingestion"""
-        logger.info("🛑 Stopping data ingester...")
+        logger.info("Stopping data ingester...")
         self.running = False
         self.binance_ingester.stop()
 
