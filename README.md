@@ -49,7 +49,7 @@ A complete, production-ready trading AI system that continuously ingests Binance
 
 1. **Clone and setup**:
 ```bash
-git clone <your-repo>
+git clone https://github.com/Rishabh-27-Devloper/trade-ai.git
 cd trade-ai
 cp .env.example .env
 ```
