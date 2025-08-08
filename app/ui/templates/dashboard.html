@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading AI Dashboard</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0f0f23;
+            color: #cccccc;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: #1a1a2e;
+            padding: 1rem 2rem;
+            border-bottom: 2px solid #16213e;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            color: #00ff88;
+            font-size: 1.5rem;
+            display: inline-block;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-left: 1rem;
+        }
+
+        .status-running { background: #00ff88; color: #000; }
+        .status-stopped { background: #ff4757; color: #fff; }
+        .status-warning { background: #ffa502; color: #000; }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: #1a1a2e;
+            border: 1px solid #16213e;
+            border-radius: 8px;
+            padding: 1.5rem;
+            position: relative;
+        }
+
+        .card h3 {
+            color: #00ff88;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #16213e;
+        }
+
+        .metric:last-child { border-bottom: none; }
+
+        .metric-label {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .metric-value {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .positive { color: #00ff88; }
+        .negative { color: #ff4757; }
+        .neutral { color: #cccccc; }
+
+        .chart-container {
+            grid-column: 1 / -1;
+            height: 400px;
+        }
+
+        .trades-container {
+            grid-column: 1 / -1;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .trade-item {
+            background: #16213e;
+            margin: 0.5rem 0;
+            padding: 1rem;
+            border-radius: 4px;
+            border-left: 4px solid #00ff88;
+        }
+
+        .trade-item.loss { border-left-color: #ff4757; }
+
+        .trade-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .trade-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: #888;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .btn {
+            background: #00ff88;
+            color: #000;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #00cc6a;
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: #ff4757;
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #ff3742;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #00ff88;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .logs {
+            grid-column: 1 / -1;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.8rem;
+        }
+
+        .log-item {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #16213e;
+        }
+
+        .log-error { color: #ff4757; }
+        .log-warning { color: #ffa502; }
+        .log-info { color: #00ff88; }
+
+        .timestamp {
+            color: #666;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 Trading AI Dashboard</h1>
+        <span id="connection-status" class="status-badge status-warning">Connecting...</span>
+        <span id="system-status" class="status-badge status-stopped">System Loading</span>
+    </div>
+
+    <div class="container">
+        <div class="controls">
+            <button class="btn" onclick="manualRetrain()">🧠 Retrain Model</button>
+            <button class="btn" onclick="manualTrade('long')">📈 Manual Long</button>
+            <button class="btn" onclick="manualTrade('short')">📉 Manual Short</button>
+            <button class="btn btn-danger" onclick="refreshData()">🔄 Refresh</button>
+        </div>
+
+        <div class="grid">
+            <!-- Portfolio Status -->
+            <div class="card">
+                <h3>💰 Portfolio Status</h3>
+                <div class="metric">
+                    <span class="metric-label">Current Balance</span>
+                    <span id="current-balance" class="metric-value">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Return</span>
+                    <span id="total-return" class="metric-value">0.00%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total P&L</span>
+                    <span id="total-pnl" class="metric-value">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Unrealized P&L</span>
+                    <span id="unrealized-pnl" class="metric-value">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Max Drawdown</span>
+                    <span id="max-drawdown" class="metric-value">0.00%</span>
+                </div>
+            </div>
+
+            <!-- Trading Stats -->
+            <div class="card">
+                <h3>📊 Trading Statistics</h3>
+                <div class="metric">
+                    <span class="metric-label">Total Trades</span>
+                    <span id="total-trades" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Win Rate</span>
+                    <span id="win-rate" class="metric-value">0.00%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Open Positions</span>
+                    <span id="open-positions" class="metric-value">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Current Price</span>
+                    <span id="current-price" class="metric-value">$0.00</span>
+                </div>
+            </div>
+
+            <!-- System Status -->
+            <div class="card">
+                <h3>⚙️ System Status</h3>
+                <div class="metric">
+                    <span class="metric-label">Data Ingester</span>
+                    <span id="ingester-status" class="metric-value status-badge">Unknown</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Model Trainer</span>
+                    <span id="trainer-status" class="metric-value status-badge">Unknown</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Trade Simulator</span>
+                    <span id="simulator-status" class="metric-value status-badge">Unknown</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Database</span>
+                    <span id="database-status" class="metric-value status-badge">Unknown</span>
+                </div>
+            </div>
+
+            <!-- Model Info -->
+            <div class="card">
+                <h3>🧠 Model Information</h3>
+                <div class="metric">
+                    <span class="metric-label">Model Type</span>
+                    <span id="model-type" class="metric-value">Unknown</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Training Status</span>
+                    <span id="training-status" class="metric-value">Unknown</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Last Accuracy</span>
+                    <span id="model-accuracy" class="metric-value">N/A</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Sharpe Ratio</span>
+                    <span id="sharpe-ratio" class="metric-value">N/A</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Chart -->
+        <div class="card chart-container">
+            <h3>📈 Price Chart (Last 24h)</h3>
+            <canvas id="price-chart"></canvas>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="card trades-container">
+            <h3>🔄 Recent Trades</h3>
+            <div id="trades-list">
+                <p class="neutral">No trades yet...</p>
+            </div>
+        </div>
+
+        <!-- System Logs -->
+        <div class="card logs">
+            <h3>📝 System Logs</h3>
+            <div id="logs-list" style="max-height: 200px; overflow-y: auto;">
+                <p class="neutral">Loading logs...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let priceChart = null;
+
+        // Socket connection handling
+        socket.on('connect', () => {
+            document.getElementById('connection-status').textContent = 'Connected';
+            document.getElementById('connection-status').className = 'status-badge status-running';
+            socket.emit('request_update');
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('connection-status').textContent = 'Disconnected';
+            document.getElementById('connection-status').className = 'status-badge status-stopped';
+        });
+
+        socket.on('status_update', (data) => {
+            updateSystemStatus(data);
+        });
+
+        socket.on('portfolio_update', (data) => {
+            updatePortfolioStatus(data);
+        });
+
+        socket.on('price_update', (data) => {
+            updateCurrentPrice(data.price);
+        });
+
+        // Initialize chart
+        function initPriceChart() {
+            const ctx = document.getElementById('price-chart').getContext('2d');
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Price',
+                        data: [],
+                        borderColor: '#00ff88',
+                        backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: false }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        }
+
+        // Update functions
+        function updateSystemStatus(data) {
+            const ingesterStatus = data.ingester?.running ? 'Running' : 'Stopped';
+            const trainerStatus = data.trainer?.running ? 'Running' : 'Stopped';
+            const simulatorStatus = data.simulator?.running ? 'Running' : 'Stopped';
+            const databaseStatus = data.database?.connected ? 'Connected' : 'Disconnected';
+
+            document.getElementById('ingester-status').textContent = ingesterStatus;
+            document.getElementById('trainer-status').textContent = trainerStatus;
+            document.getElementById('simulator-status').textContent = simulatorStatus;
+            document.getElementById('database-status').textContent = databaseStatus;
+
+            // Update system status badge
+            const allRunning = data.ingester?.running && data.trainer?.running && data.simulator?.running;
+            const systemStatusEl = document.getElementById('system-status');
+            if (allRunning) {
+                systemStatusEl.textContent = 'System Running';
+                systemStatusEl.className = 'status-badge status-running';
+            } else {
+                systemStatusEl.textContent = 'System Partial';
+                systemStatusEl.className = 'status-badge status-warning';
+            }
+
+            // Update model info
+            if (data.trainer) {
+                document.getElementById('model-type').textContent = data.trainer.model_type || 'Unknown';
+                document.getElementById('training-status').textContent = data.trainer.is_trained ? 'Trained' : 'Not Trained';
+
+                if (data.trainer.latest_checkpoint) {
+                    const accuracy = data.trainer.latest_checkpoint.accuracy;
+                    document.getElementById('model-accuracy').textContent = accuracy ? `${(accuracy * 100).toFixed(2)}%` : 'N/A';
+
+                    const sharpe = data.trainer.latest_checkpoint.sharpe_ratio;
+                    document.getElementById('sharpe-ratio').textContent = sharpe ? sharpe.toFixed(3) : 'N/A';
+                }
+            }
+        }
+
+        function updatePortfolioStatus(data) {
+            document.getElementById('current-balance').textContent = `$${data.current_balance?.toFixed(2) || '0.00'}`;
+            document.getElementById('total-return').textContent = `${data.total_return_percent?.toFixed(2) || '0.00'}%`;
+            document.getElementById('total-pnl').textContent = `$${data.total_pnl?.toFixed(2) || '0.00'}`;
+            document.getElementById('unrealized-pnl').textContent = `$${data.unrealized_pnl?.toFixed(2) || '0.00'}`;
+            document.getElementById('max-drawdown').textContent = `${data.max_drawdown_percent?.toFixed(2) || '0.00'}%`;
+
+            document.getElementById('total-trades').textContent = data.total_trades || '0';
+            document.getElementById('win-rate').textContent = `${data.win_rate?.toFixed(2) || '0.00'}%`;
+            document.getElementById('open-positions').textContent = data.open_positions || '0';
+
+            // Color coding for P&L values
+            const totalPnlEl = document.getElementById('total-pnl');
+            const unrealizedPnlEl = document.getElementById('unrealized-pnl');
+            const totalReturnEl = document.getElementById('total-return');
+
+            totalPnlEl.className = `metric-value ${data.total_pnl > 0 ? 'positive' : data.total_pnl < 0 ? 'negative' : 'neutral'}`;
+            unrealizedPnlEl.className = `metric-value ${data.unrealized_pnl > 0 ? 'positive' : data.unrealized_pnl < 0 ? 'negative' : 'neutral'}`;
+            totalReturnEl.className = `metric-value ${data.total_return_percent > 0 ? 'positive' : data.total_return_percent < 0 ? 'negative' : 'neutral'}`;
+        }
+
+        function updateCurrentPrice(price) {
+            document.getElementById('current-price').textContent = `$${price?.toFixed(2) || '0.00'}`;
+        }
+
+        // API functions
+        async function manualRetrain() {
+            try {
+                const response = await fetch('/api/model/retrain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    alert('Model retraining started!');
+                } else {
+                    alert('Failed to start retraining');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function manualTrade(direction) {
+            try {
+                const response = await fetch('/api/trade/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ direction })
+                });
+
+                if (response.ok) {
+                    alert(`Manual ${direction} trade executed!`);
+                    loadRecentTrades();
+                } else {
+                    alert('Trade execution failed');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function loadRecentTrades() {
+            try {
+                const response = await fetch('/api/trades?limit=10');
+                const trades = await response.json();
+
+                const tradesHtml = trades.map(trade => `
+                    <div class="trade-item ${trade.pnl_net < 0 ? 'loss' : ''}">
+                        <div class="trade-header">
+                            <strong>${trade.side.toUpperCase()} ${trade.symbol}</strong>
+                            <span class="${trade.pnl_net > 0 ? 'positive' : 'negative'}">
+                                $${trade.pnl_net?.toFixed(2)} (${trade.return_percent?.toFixed(2)}%)
+                            </span>
+                        </div>
+                        <div class="trade-details">
+                            <div>Entry: $${trade.entry_price}</div>
+                            <div>Exit: $${trade.exit_price}</div>
+                            <div>Size: ${trade.position_size?.toFixed(4)}</div>
+                            <div>Duration: ${trade.holding_minutes}m</div>
+                            <div>Reason: ${trade.exit_reason}</div>
+                        </div>
+                    </div>
+                `).join('');
+
+                document.getElementById('trades-list').innerHTML = tradesHtml || '<p class="neutral">No trades yet...</p>';
+            } catch (error) {
+                console.error('Error loading trades:', error);
+            }
+        }
+
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs?limit=20');
+                const logs = await response.json();
+
+                const logsHtml = logs.map(log => `
+                    <div class="log-item log-${log.level.toLowerCase()}">
+                        <span class="timestamp">[${new Date(log.timestamp).toLocaleTimeString()}]</span>
+                        <strong>[${log.component}]</strong> ${log.message}
+                    </div>
+                `).join('');
+
+                document.getElementById('logs-list').innerHTML = logsHtml || '<p class="neutral">No logs available</p>';
+            } catch (error) {
+                console.error('Error loading logs:', error);
+            }
+        }
+
+        function refreshData() {
+            socket.emit('request_update');
+            loadRecentTrades();
+            loadLogs();
+        }
+
+        // Initialize
+        initPriceChart();
+        loadRecentTrades();
+        loadLogs();
+
+        // Refresh data periodically
+        setInterval(refreshData, 30000); // Every 30 seconds
+    </script>
+</body>
+</html>

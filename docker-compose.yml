@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  trade-ai:
+    build: .
+    container_name: trade-ai
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=true
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - DATABASE_URL=sqlite:///trade_ai.db
+      - TRADING_PAIR=BTCUSDT
+      - TRADE_AMOUNT_USDT=100.0
+      - RISK_PERCENT=0.01
+      - MAX_POSITIONS=3
+      - COOLDOWN_SECONDS=10
+      - MODEL_TYPE=xgboost
+      - RETRAIN_INTERVAL_SECONDS=3600
+      - MIN_NEW_ROWS_FOR_RETRAIN=50
+      - FEATURE_WINDOW_SIZE=20
+      - LOG_LEVEL=INFO
+      - DASHBOARD_USERNAME=admin
+      - DASHBOARD_PASSWORD=admin123
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  data:
+  logs:
+  models:

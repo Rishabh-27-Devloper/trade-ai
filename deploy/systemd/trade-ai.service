@@ -1,0 +1,42 @@
+[Unit]
+Description=Trading AI System
+Documentation=https://github.com/your-repo/trade-ai
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/trade-ai
+Environment=PYTHONPATH=/opt/trade-ai
+EnvironmentFile=/opt/trade-ai/.env
+
+# Use Docker Compose
+ExecStart=/usr/local/bin/docker-compose up --remove-orphans
+ExecStop=/usr/local/bin/docker-compose down
+ExecReload=/usr/local/bin/docker-compose restart
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/trade-ai
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trade-ai
+
+[Install]
+WantedBy=multi-user.target
