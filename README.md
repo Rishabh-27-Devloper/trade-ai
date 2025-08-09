@@ -396,4 +396,4 @@ This system is for educational and research purposes. Trading involves significa
 
 **Built with ❤️ for the trading and AI community**
 
-*For questions, issues, or feature requests, please open a GitHub issue or contact the maintainers.*
+*For questions, issues, or feature requests, please open a GitHub issue or contact me.*
